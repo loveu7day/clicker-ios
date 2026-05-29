@@ -1,0 +1,66 @@
+name: Build iOS App
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:  # 允许手动触发
+
+jobs:
+  build:
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          ls /Applications/Xcode*.app
+          sudo xcode-select -s /Applications/Xcode_16.2.app
+
+      - name: Find Xcode project
+        run: |
+          echo "=== All .xcodeproj files ==="
+          find . -name "*.xcodeproj" -type d
+          echo "=== All Payload/*.xcodeproj files ==="
+          find . -path "*/Payload/*.xcodeproj" 2>/dev/null
+          echo "=== Root level ==="
+          ls -la
+
+      - name: Build for testing
+        run: |
+          XCODEPROJ=$(find . -name "*.xcodeproj" -type d | head -1)
+          echo "Found project: $XCODEPROJ"
+          PROJECT_DIR=$(dirname "$XCODEPROJ")
+          echo "Project dir: $PROJECT_DIR"
+          cd "$PROJECT_DIR"
+          xcodebuild -list
+          xcodebuild build -scheme ClickerApp -destination 'generic/platform=iOS' CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO | xcpretty || true
+
+      - name: Create IPA
+        run: |
+          XCODEPROJ=$(find . -name "*.xcodeproj" -type d | head -1)
+          PROJECT_DIR=$(dirname "$XCODEPROJ")
+          cd "$PROJECT_DIR"
+          # Find the built .app
+          APP=$(find build -name "*.app" -type d 2>/dev/null | head -1)
+          echo "App found at: $APP"
+          mkdir -p Payload
+          cp -r "$APP" Payload/
+          zip -r ClickerApp.ipa Payload
+          ls -la ClickerApp.ipa
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ClickerApp
+          path: "**/ClickerApp.ipa"
+          retention-days: 30
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: build/logs/
+          retention-days: 5
